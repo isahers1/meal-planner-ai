@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "meal_planner": "./meal_agent/agent.py:graph"
+  },
+  "env": ".env"
+}

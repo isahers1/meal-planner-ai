@@ -1,0 +1,6 @@
+backend/.venv
+.env
+backend/.langgraph_api
+*.egg-info
+frontend/dist
+frontend/node_modules
