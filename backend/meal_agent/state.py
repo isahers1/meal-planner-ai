@@ -31,7 +31,7 @@ class MealPlannerState(TypedDict, total=False):
 
     # Output - uses reducer to merge updates incrementally
     meal_output: Annotated[dict[str, MealInfo], operator.or_]
-    shopping_list: Annotated[dict[str, float], operator.or_]  # ingredient -> quantity (numeric)
+    shopping_list: Annotated[dict[str, str], operator.or_]  # ingredient -> "quantity unit" (e.g., "0.5 lb")
 
     # Fresh ingredient tracking for waste minimization
     # Tracks remaining quantities of perishable ingredients

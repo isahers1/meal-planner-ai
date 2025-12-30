@@ -15,7 +15,7 @@ class RecipeIngredient(BaseModel):
     """A single ingredient with quantity."""
     name: str = Field(description="Name of the ingredient, lowercase with underscores, e.g. 'onion', 'ground_beef'")
     quantity: float = Field(description="Numeric quantity needed")
-    unit: str = Field(description="Unit of measurement, e.g. 'whole', 'lb', 'cup', 'tbsp'")
+    unit: str = Field(description="Unit of measurement. Use weight (lb, oz) for meats/proteins, volume (cup, tbsp, tsp) for liquids/powders, count with specifier for produce (clove, slice, medium, large). Examples: 'lb', 'oz', 'cup', 'tbsp', 'clove', 'medium', 'slice'")
     is_fresh: bool = Field(description="Whether this is a fresh/perishable ingredient that spoils within a week")
 
 
@@ -174,11 +174,20 @@ Recipe text:
 
 Extract:
 1. Recipe name
-2. All ingredients with precise quantities (use numeric values)
+2. All ingredients with precise quantities and PROPER UNITS
 3. Step-by-step instructions
 4. Mark each ingredient as fresh (spoils within a week) or not
 
-For ingredient names, use lowercase with underscores (e.g., 'ground_beef', 'bell_pepper', 'onion').
+CRITICAL - Unit formatting rules:
+- Meats/proteins: use weight (lb or oz). Example: "0.5 lb chicken_breast", "4 oz salmon"
+- Garlic: use "clove" not whole heads. Example: "2 clove garlic"
+- Onions/peppers/tomatoes: use "medium" or "large" or weight. Example: "1 medium onion"
+- Liquids: use volume (cup, tbsp, tsp). Example: "0.25 cup soy_sauce"
+- Cheese: use weight or volume. Example: "0.25 cup parmesan" or "2 oz cheddar"
+- Herbs: use "tbsp" for chopped or "sprig" for whole. Example: "2 tbsp cilantro"
+- Pasta/rice/grains: use weight or volume. Example: "4 oz pasta" or "0.5 cup rice"
+
+For ingredient names, use lowercase with underscores (e.g., 'ground_beef', 'bell_pepper', 'garlic').
 Common fresh items: meat, poultry, fish, vegetables, fruits, dairy, eggs, fresh herbs.
 Non-fresh: canned goods, pasta, rice, dried spices, condiments."""
 
@@ -200,6 +209,9 @@ Non-fresh: canned goods, pasta, rice, dried spices, condiments."""
     fresh_updates = {}
     current_inventory = dict(state.get("fresh_inventory", {}))
 
+    # Track units separately for proper shopping list formatting
+    ingredient_units = {}
+
     for ing in parsed.ingredients:
         ing_name = ing.name.lower().replace(" ", "_")
 
@@ -209,9 +221,10 @@ Non-fresh: canned goods, pasta, rice, dried spices, condiments."""
 
         ingredients_dict[ing_name] = f"{ing.quantity} {ing.unit}"
 
-        # Update shopping list - aggregate quantities
+        # Update shopping list - aggregate quantities and track units
         current_qty = shopping_updates.get(ing_name, 0)
         shopping_updates[ing_name] = current_qty + ing.quantity
+        ingredient_units[ing_name] = ing.unit  # Store the unit
 
         # Track fresh ingredients
         if ing.is_fresh:
@@ -223,6 +236,15 @@ Non-fresh: canned goods, pasta, rice, dried spices, condiments."""
                 # Already have some, add to usage
                 fresh_updates[ing_name] = current_inventory[ing_name] + ing.quantity
 
+    # Format shopping list with units
+    formatted_shopping = {}
+    for ing_name, qty in shopping_updates.items():
+        unit = ingredient_units.get(ing_name, "")
+        if qty == int(qty):
+            formatted_shopping[ing_name] = f"{int(qty)} {unit}".strip()
+        else:
+            formatted_shopping[ing_name] = f"{qty:.2g} {unit}".strip()
+
     meal_info: MealInfo = {
         "name": parsed.name,
         "ingredients": ingredients_dict,
@@ -231,7 +253,7 @@ Non-fresh: canned goods, pasta, rice, dried spices, condiments."""
 
     return {
         "meal_output": {day: meal_info},
-        "shopping_list": shopping_updates,
+        "shopping_list": formatted_shopping,
         "fresh_inventory": fresh_updates,
         "messages": [],  # Clear messages for next day
     }
@@ -254,21 +276,10 @@ def should_continue(state: MealPlannerState) -> str:
 
 
 def format_output(state: MealPlannerState) -> dict:
-    """Format the final output with shopping list as readable strings."""
-    shopping_list = state.get("shopping_list", {})
-
-    # Convert numeric quantities to readable strings
-    formatted_shopping = {}
-    for item, qty in shopping_list.items():
-        if isinstance(qty, (int, float)):
-            if qty == int(qty):
-                formatted_shopping[item] = str(int(qty))
-            else:
-                formatted_shopping[item] = f"{qty:.2f}"
-        else:
-            formatted_shopping[item] = str(qty)
-
-    return {"shopping_list": formatted_shopping}
+    """Format the final output - shopping list is already formatted with units."""
+    # Shopping list is already formatted as "quantity unit" strings
+    # Just pass through as-is
+    return {}
 
 
 # Build the graph
