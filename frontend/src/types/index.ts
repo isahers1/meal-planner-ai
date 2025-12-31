@@ -34,17 +34,49 @@ export interface MealInput {
   meal_input: Record<DayOfWeek, DayInput>;
 }
 
+// Ingredient category type
+export type IngredientCategory =
+  | "produce"
+  | "protein"
+  | "dairy"
+  | "grains"
+  | "pantry"
+  | "aromatics";
+
+// Information about a single ingredient
+export interface IngredientInfo {
+  quantity: string; // e.g., "0.5 lb", "2 cloves"
+  category: IngredientCategory;
+}
+
+// Equipment type
+export type Equipment =
+  | "stovetop"
+  | "oven"
+  | "air_fryer"
+  | "microwave"
+  | "no_cook";
+
 // Information about a generated meal
 export interface MealInfo {
   name: string;
-  ingredients: Record<string, string>; // ingredient name -> quantity with unit
+  ingredients: Record<string, IngredientInfo>; // ingredient name -> info with quantity and category
   instructions: string[];
+  time_estimate: number; // Total time in minutes
+  equipment: Equipment[];
+  image_url?: string; // URL of a relevant food image
+}
+
+// Shopping list item with category
+export interface ShoppingListItem {
+  quantity: string;
+  category: IngredientCategory;
 }
 
 // Response from the meal planner
 export interface MealPlannerResponse {
   meal_output: Record<string, MealInfo>;
-  shopping_list: Record<string, string>;
+  shopping_list: Record<string, ShoppingListItem>;
 }
 
 // Default values for a day's input

@@ -6,8 +6,8 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from pydantic import BaseModel, Field
 
-from meal_agent.state import MealPlannerState, MealInfo
-from meal_agent.tools import get_recipe_search_tool
+from meal_agent.state import MealPlannerState, MealInfo, IngredientInfo
+from meal_agent.tools import get_recipe_search_tool, search_recipe_image
 from meal_agent.constants import DAYS_OF_WEEK, PANTRY_STAPLES
 
 
@@ -17,6 +17,7 @@ class RecipeIngredient(BaseModel):
     quantity: float = Field(description="Numeric quantity needed")
     unit: str = Field(description="Unit of measurement. Use weight (lb, oz) for meats/proteins, volume (cup, tbsp, tsp) for liquids/powders, count with specifier for produce (clove, slice, medium, large). Examples: 'lb', 'oz', 'cup', 'tbsp', 'clove', 'medium', 'slice'")
     is_fresh: bool = Field(description="Whether this is a fresh/perishable ingredient that spoils within a week")
+    category: str = Field(description="Category of the ingredient: 'produce', 'protein', 'dairy', 'grains', 'pantry', 'aromatics'")
 
 
 class ParsedRecipe(BaseModel):
@@ -24,6 +25,8 @@ class ParsedRecipe(BaseModel):
     name: str = Field(description="Name of the recipe")
     ingredients: list[RecipeIngredient] = Field(description="List of ingredients with quantities")
     instructions: list[str] = Field(description="Step-by-step cooking instructions")
+    time_estimate: int = Field(description="Total time in minutes (prep + cooking)")
+    equipment: list[str] = Field(description="Required equipment. Use: 'stovetop', 'oven', 'air_fryer', 'microwave', 'no_cook'")
 
 
 # Set up tools and LLM
@@ -85,13 +88,24 @@ def generate_meal(state: MealPlannerState) -> dict:
                 + "\n".join(f"- {item}" for item in inventory_items)
             )
 
+    # Get already-planned meals to avoid duplicates
+    meal_output = state.get("meal_output", {})
+    already_planned = ""
+    if meal_output:
+        planned_meals = [info["name"] for info in meal_output.values()]
+        already_planned = (
+            "\n\nIMPORTANT - These meals have already been planned for other days. "
+            "You MUST choose a DIFFERENT recipe:\n"
+            + "\n".join(f"- {meal}" for meal in planned_meals)
+        )
+
     system_prompt = f"""You are a helpful meal planning assistant. Your task is to find and suggest a dinner recipe.
 
 Requirements:
 - The recipe must take {time_limit} minutes or less total (prep + cooking time)
 - The recipe should serve {servings} person(s)
 - Choose recipes with commonly available ingredients
-- Prefer simple, home-cooked meals{inventory_context}
+- Prefer simple, home-cooked meals{inventory_context}{already_planned}
 
 Use the recipe_search tool to find a recipe, then provide complete details including:
 - Recipe name
@@ -174,9 +188,11 @@ Recipe text:
 
 Extract:
 1. Recipe name
-2. All ingredients with precise quantities and PROPER UNITS
+2. All ingredients with precise quantities, PROPER UNITS, and category
 3. Step-by-step instructions
 4. Mark each ingredient as fresh (spoils within a week) or not
+5. Total time estimate in minutes (prep + cooking)
+6. Required equipment (choose from: 'stovetop', 'oven', 'air_fryer', 'microwave', 'no_cook')
 
 CRITICAL - Unit formatting rules:
 - Meats/proteins: use weight (lb or oz). Example: "0.5 lb chicken_breast", "4 oz salmon"
@@ -186,6 +202,14 @@ CRITICAL - Unit formatting rules:
 - Cheese: use weight or volume. Example: "0.25 cup parmesan" or "2 oz cheddar"
 - Herbs: use "tbsp" for chopped or "sprig" for whole. Example: "2 tbsp cilantro"
 - Pasta/rice/grains: use weight or volume. Example: "4 oz pasta" or "0.5 cup rice"
+
+CRITICAL - Ingredient categories:
+- produce: vegetables, fruits (spinach, tomato, lemon, bell_pepper)
+- protein: meats, fish, tofu, eggs (chicken_breast, ground_beef, salmon, eggs)
+- dairy: milk, cheese, butter, cream (parmesan, cheddar, butter, heavy_cream)
+- grains: pasta, rice, bread, flour (pasta, rice, bread_crumbs)
+- pantry: canned goods, sauces, condiments (soy_sauce, chicken_broth, olive_oil)
+- aromatics: garlic, onion, ginger, shallot, herbs (garlic, onion, ginger, basil)
 
 For ingredient names, use lowercase with underscores (e.g., 'ground_beef', 'bell_pepper', 'garlic').
 Common fresh items: meat, poultry, fish, vegetables, fruits, dairy, eggs, fresh herbs.
@@ -204,13 +228,14 @@ Non-fresh: canned goods, pasta, rice, dried spices, condiments."""
         return {"meal_output": {day: meal_info}}
 
     # Build the meal info
-    ingredients_dict = {}
+    ingredients_dict: dict[str, IngredientInfo] = {}
     shopping_updates = {}
     fresh_updates = {}
     current_inventory = dict(state.get("fresh_inventory", {}))
 
-    # Track units separately for proper shopping list formatting
+    # Track units and categories separately for proper shopping list formatting
     ingredient_units = {}
+    ingredient_categories = {}
 
     for ing in parsed.ingredients:
         ing_name = ing.name.lower().replace(" ", "_")
@@ -219,12 +244,21 @@ Non-fresh: canned goods, pasta, rice, dried spices, condiments."""
         if ing_name in PANTRY_STAPLES or any(staple in ing_name for staple in PANTRY_STAPLES):
             continue
 
-        ingredients_dict[ing_name] = f"{ing.quantity} {ing.unit}"
+        # Store as IngredientInfo with quantity and category
+        quantity_str = f"{ing.quantity} {ing.unit}"
+        if ing.quantity == int(ing.quantity):
+            quantity_str = f"{int(ing.quantity)} {ing.unit}"
+
+        ingredients_dict[ing_name] = {
+            "quantity": quantity_str,
+            "category": ing.category,
+        }
 
         # Update shopping list - aggregate quantities and track units
         current_qty = shopping_updates.get(ing_name, 0)
         shopping_updates[ing_name] = current_qty + ing.quantity
         ingredient_units[ing_name] = ing.unit  # Store the unit
+        ingredient_categories[ing_name] = ing.category  # Store category for shopping list
 
         # Track fresh ingredients
         if ing.is_fresh:
@@ -236,20 +270,33 @@ Non-fresh: canned goods, pasta, rice, dried spices, condiments."""
                 # Already have some, add to usage
                 fresh_updates[ing_name] = current_inventory[ing_name] + ing.quantity
 
-    # Format shopping list with units
+    # Format shopping list with units and categories
     formatted_shopping = {}
     for ing_name, qty in shopping_updates.items():
         unit = ingredient_units.get(ing_name, "")
+        category = ingredient_categories.get(ing_name, "pantry")
         if qty == int(qty):
-            formatted_shopping[ing_name] = f"{int(qty)} {unit}".strip()
+            quantity_str = f"{int(qty)} {unit}".strip()
         else:
-            formatted_shopping[ing_name] = f"{qty:.2g} {unit}".strip()
+            quantity_str = f"{qty:.2g} {unit}".strip()
+        formatted_shopping[ing_name] = {
+            "quantity": quantity_str,
+            "category": category,
+        }
+
+    # Search for a relevant recipe image
+    image_url = search_recipe_image(parsed.name)
 
     meal_info: MealInfo = {
         "name": parsed.name,
         "ingredients": ingredients_dict,
         "instructions": parsed.instructions,
+        "time_estimate": parsed.time_estimate,
+        "equipment": parsed.equipment,
     }
+
+    if image_url:
+        meal_info["image_url"] = image_url
 
     return {
         "meal_output": {day: meal_info},

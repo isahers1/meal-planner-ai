@@ -1,5 +1,8 @@
-import { DayBox } from "./components/DayBox";
-import { ShoppingList } from "./components/ShoppingList";
+import { Loader2, RotateCcw, Info } from "lucide-react";
+import { DayColumn } from "./components/DayColumn";
+import { ShoppingListModal } from "./components/ShoppingListModal";
+import { ShoppingButton } from "./components/ShoppingButton";
+import { InfoModal } from "./components/InfoModal";
 import { useMealPlanner } from "./hooks/useMealPlanner";
 import { DAYS_OF_WEEK } from "./types";
 import type { DayOfWeek } from "./types";
@@ -13,87 +16,117 @@ function App() {
     currentDay,
     error,
     hasDaysSelected,
+    isShoppingListOpen,
+    isInfoOpen,
+    shoppingListCount,
     updateDay,
     submit,
     reset,
+    openShoppingList,
+    closeShoppingList,
+    openInfo,
+    closeInfo,
   } = useMealPlanner();
 
   const hasMeals = Object.keys(meals).length > 0;
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold mb-2 text-center text-gray-800">
-          Weekly Meal Planner
-        </h1>
-        <p className="text-center text-gray-600 mb-8">
-          Select which days you want to cook dinner, set your time constraints,
-          and let AI plan your meals.
-        </p>
-
-        {/* Error display */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
-            <strong>Error:</strong> {error}
+    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+      {/* Error display */}
+      {error && (
+        <div className="bg-red-50 border-b border-red-200 px-4 py-3">
+          <div className="flex items-center gap-2 text-red-700 text-sm">
+            <span className="font-medium">Error:</span>
+            <span>{error}</span>
           </div>
-        )}
-
-        {/* Day Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-8">
-          {DAYS_OF_WEEK.map((day: DayOfWeek) => (
-            <DayBox
-              key={day}
-              day={day}
-              dayInput={dayInputs[day]}
-              meal={meals[day] || null}
-              isLoading={isLoading}
-              isCurrentDay={currentDay === day}
-              onChange={updateDay}
-            />
-          ))}
         </div>
+      )}
 
-        {/* Shopping List */}
-        {Object.keys(shoppingList).length > 0 && (
-          <div className="mb-8">
-            <ShoppingList items={shoppingList} />
+      {/* Main content - full width */}
+      <main className="flex-1 flex flex-col w-full">
+        {/* Week columns */}
+        <div className="flex-1 bg-white border-b border-gray-200 overflow-hidden">
+          <div className="h-full flex overflow-x-auto scroll-snap-x">
+            {DAYS_OF_WEEK.map((day: DayOfWeek) => (
+              <DayColumn
+                key={day}
+                day={day}
+                input={dayInputs[day]}
+                meal={meals[day]}
+                isLoading={isLoading && currentDay === day}
+                onUpdate={(updates) => updateDay(day, updates)}
+              />
+            ))}
           </div>
-        )}
+        </div>
+      </main>
 
-        {/* Action Buttons */}
-        <div className="flex justify-end gap-4">
-          {hasMeals && (
+      {/* Fixed bottom bar */}
+      <footer className="bg-white border-t border-gray-200 px-4 py-3">
+        <div className="flex items-center justify-between">
+          {/* Left side - Info button and Reset button */}
+          <div className="flex items-center gap-2">
             <button
-              onClick={reset}
-              disabled={isLoading}
-              className="px-6 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed transition-colors"
+              type="button"
+              onClick={openInfo}
+              className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              aria-label="Info"
             >
-              Start Over
+              <Info className="w-5 h-5" />
             </button>
-          )}
-          <button
-            onClick={submit}
-            disabled={isLoading || !hasDaysSelected || hasMeals}
-            className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-          >
-            {isLoading ? (
-              <>
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                Generating Meals...
-              </>
-            ) : (
-              "Generate Meal Plan"
+            {hasMeals && (
+              <button
+                onClick={reset}
+                disabled={isLoading}
+                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <RotateCcw className="w-4 h-4" />
+                Start Over
+              </button>
             )}
-          </button>
-        </div>
+          </div>
 
-        {/* Help text */}
-        {!hasDaysSelected && !hasMeals && (
-          <p className="text-center text-gray-500 mt-4">
-            Check "Want to cook dinner" on at least one day to get started.
-          </p>
-        )}
-      </div>
+          {/* Center - Help text or status */}
+          <div className="text-sm text-gray-500">
+            {isLoading ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Generating meals...
+              </span>
+            ) : !hasDaysSelected && !hasMeals ? (
+              <span>Tap a day to start planning</span>
+            ) : hasMeals ? (
+              <span>{Object.keys(meals).length} meals planned</span>
+            ) : (
+              <span>{DAYS_OF_WEEK.filter((d) => dayInputs[d].dinner).length} days selected</span>
+            )}
+          </div>
+
+          {/* Right side - Generate button and shopping cart */}
+          <div className="flex items-center gap-3">
+            {shoppingListCount > 0 && (
+              <ShoppingButton count={shoppingListCount} onClick={openShoppingList} />
+            )}
+            <button
+              onClick={submit}
+              disabled={isLoading || !hasDaysSelected || hasMeals}
+              className="px-5 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            >
+              Generate
+            </button>
+          </div>
+        </div>
+      </footer>
+
+      {/* Shopping list modal */}
+      <ShoppingListModal
+        isOpen={isShoppingListOpen}
+        onClose={closeShoppingList}
+        items={shoppingList}
+      />
+
+      {/* Info modal */}
+      <InfoModal isOpen={isInfoOpen} onClose={closeInfo} />
     </div>
   );
 }

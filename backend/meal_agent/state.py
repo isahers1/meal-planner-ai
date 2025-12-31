@@ -12,11 +12,20 @@ class DayInput(TypedDict, total=False):
     dinner_time_limit: int
 
 
-class MealInfo(TypedDict):
+class IngredientInfo(TypedDict):
+    """Information about a single ingredient."""
+    quantity: str  # e.g., "0.5 lb", "2 cloves"
+    category: str  # e.g., "produce", "protein", "dairy", "grains", "pantry", "aromatics"
+
+
+class MealInfo(TypedDict, total=False):
     """Information about a generated meal."""
     name: str
-    ingredients: dict[str, str]  # ingredient name -> quantity with unit
+    ingredients: dict[str, IngredientInfo]  # ingredient name -> info with quantity and category
     instructions: list[str]
+    time_estimate: int  # Total time in minutes
+    equipment: list[str]  # Required equipment: "stovetop", "oven", "air_fryer", "microwave", "no_cook"
+    image_url: str  # URL of a relevant food image
 
 
 class MealPlannerState(TypedDict, total=False):
@@ -31,7 +40,7 @@ class MealPlannerState(TypedDict, total=False):
 
     # Output - uses reducer to merge updates incrementally
     meal_output: Annotated[dict[str, MealInfo], operator.or_]
-    shopping_list: Annotated[dict[str, str], operator.or_]  # ingredient -> "quantity unit" (e.g., "0.5 lb")
+    shopping_list: Annotated[dict[str, IngredientInfo], operator.or_]  # ingredient -> {quantity, category}
 
     # Fresh ingredient tracking for waste minimization
     # Tracks remaining quantities of perishable ingredients

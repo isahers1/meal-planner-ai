@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { DAYS_OF_WEEK, DEFAULT_DAY_INPUT } from "../types";
-import type { DayInput, DayOfWeek, MealInfo } from "../types";
+import type { DayInput, DayOfWeek, MealInfo, ShoppingListItem } from "../types";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:2024";
 
@@ -19,7 +19,9 @@ function createInitialDayInputs(): DayInputs {
 export function useMealPlanner() {
   const [dayInputs, setDayInputs] = useState<DayInputs>(createInitialDayInputs);
   const [meals, setMeals] = useState<Record<string, MealInfo>>({});
-  const [shoppingList, setShoppingList] = useState<Record<string, string>>({});
+  const [shoppingList, setShoppingList] = useState<Record<string, ShoppingListItem>>({});
+  const [isShoppingListOpen, setIsShoppingListOpen] = useState(false);
+  const [isInfoOpen, setIsInfoOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentDay, setCurrentDay] = useState<DayOfWeek | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +37,7 @@ export function useMealPlanner() {
   );
 
   const reset = useCallback(() => {
+    setDayInputs(createInitialDayInputs());
     setMeals({});
     setShoppingList({});
     setError(null);
@@ -131,7 +134,7 @@ export function useMealPlanner() {
                   if (output?.shopping_list) {
                     setShoppingList((prev) => ({
                       ...prev,
-                      ...(output.shopping_list as Record<string, string>),
+                      ...(output.shopping_list as Record<string, ShoppingListItem>),
                     }));
                   }
                 }
@@ -154,6 +157,25 @@ export function useMealPlanner() {
   // Check if any days have dinner selected
   const hasDaysSelected = DAYS_OF_WEEK.some((day) => dayInputs[day].dinner);
 
+  const openShoppingList = useCallback(() => {
+    setIsShoppingListOpen(true);
+  }, []);
+
+  const closeShoppingList = useCallback(() => {
+    setIsShoppingListOpen(false);
+  }, []);
+
+  const openInfo = useCallback(() => {
+    setIsInfoOpen(true);
+  }, []);
+
+  const closeInfo = useCallback(() => {
+    setIsInfoOpen(false);
+  }, []);
+
+  // Count shopping list items
+  const shoppingListCount = Object.keys(shoppingList).length;
+
   return {
     dayInputs,
     meals,
@@ -162,8 +184,15 @@ export function useMealPlanner() {
     currentDay,
     error,
     hasDaysSelected,
+    isShoppingListOpen,
+    isInfoOpen,
+    shoppingListCount,
     updateDay,
     submit,
     reset,
+    openShoppingList,
+    closeShoppingList,
+    openInfo,
+    closeInfo,
   };
 }
